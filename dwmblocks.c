@@ -3,6 +3,8 @@
 #include<string.h>
 #include<unistd.h>
 #include<signal.h>
+#include<fcntl.h>
+#include<sys/wait.h>
 #ifndef NO_X
 #include<X11/Xlib.h>
 #endif
@@ -14,7 +16,7 @@
 #define SIGMINUS		SIGRTMIN
 #endif
 #define LENGTH(X)               (sizeof(X) / sizeof (X[0]))
-#define CMDLENGTH		50
+#define CMDLENGTH		60
 #define MIN( a, b ) ( ( a < b) ? a : b )
 #define STATUSLENGTH (LENGTH(blocks) * CMDLENGTH + 1)
 
@@ -29,6 +31,7 @@ typedef struct {
 void dummysighandler(int num);
 #endif
 void sighandler(int num);
+void buttonhandler(int sig, siginfo_t *si, void *ucontext);
 void getcmds(int time);
 void getsigcmds(unsigned int signal);
 void setupsignals();
@@ -61,11 +64,16 @@ void getcmd(const Block *block, char *output)
 {
 	//make sure status is same until output is ready
 	char tempstatus[CMDLENGTH] = {0};
-	strcpy(tempstatus, block->icon);
+	int i = 0;
+	/* statuscmd: o número do sinal vai como um byte invisível antes do bloco,
+	 * para o dwm saber em qual bloco o clique caiu */
+	if (block->signal)
+		tempstatus[i++] = block->signal;
+	strcpy(tempstatus + i, block->icon);
 	FILE *cmdf = popen(block->command, "r");
 	if (!cmdf)
 		return;
-	int i = strlen(block->icon);
+	i = strlen(tempstatus);
 	fgets(tempstatus+i, CMDLENGTH-i-delimLen, cmdf);
 	i = strlen(tempstatus);
 	//if block and command output are both not empty
@@ -114,6 +122,13 @@ void setupsignals()
 		if (blocks[i].signal > 0)
 			signal(SIGMINUS+blocks[i].signal, sighandler);
 	}
+
+	/* cliques vindos do dwm (statuscmd) chegam por SIGUSR1 */
+	struct sigaction sa = {0};
+	sa.sa_sigaction = buttonhandler;
+	sa.sa_flags = SA_SIGINFO | SA_RESTART;
+	sigemptyset(&sa.sa_mask);
+	sigaction(SIGUSR1, &sa, NULL);
 
 }
 
@@ -166,6 +181,7 @@ void statusloop()
 	while (1) {
 		getcmds(i++);
 		writestatus();
+		while (waitpid(-1, NULL, WNOHANG) > 0); /* recolhe processos de cliques */
 		if (!statusContinue)
 			break;
 		sleep(1.0);
@@ -184,6 +200,41 @@ void sighandler(int signum)
 {
 	getsigcmds(signum-SIGPLUS);
 	writestatus();
+}
+
+/* Executa o comando do bloco clicado com BLOCK_BUTTON=<botão> e depois
+ * pede para o dwmblocks atualizar aquele bloco. */
+void buttonhandler(int sig, siginfo_t *si, void *ucontext)
+{
+	int button = si->si_value.sival_int & 0xff;
+	unsigned int bsig = si->si_value.sival_int >> 8;
+	pid_t parent = getpid();
+	const Block *current = NULL;
+
+	for (unsigned int i = 0; i < LENGTH(blocks); i++)
+		if (blocks[i].signal == bsig)
+			current = blocks + i;
+	if (!current)
+		return;
+	if (fork() == 0) {
+		char b[4];
+		pid_t pid;
+		snprintf(b, sizeof(b), "%d", button);
+		setsid();
+		signal(SIGCHLD, SIG_DFL);
+		setenv("BLOCK_BUTTON", b, 1);
+		if ((pid = fork()) == 0) {
+			int fd = open("/dev/null", O_WRONLY);
+			if (fd >= 0)
+				dup2(fd, STDOUT_FILENO);
+			execl("/bin/sh", "sh", "-c", current->command, (char *)NULL);
+			_exit(127);
+		}
+		if (pid > 0)
+			waitpid(pid, NULL, 0);
+		kill(parent, SIGPLUS + bsig);
+		_exit(0);
+	}
 }
 
 void termhandler()
