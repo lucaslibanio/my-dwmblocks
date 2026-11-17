@@ -24,6 +24,7 @@ typedef struct {
 	unsigned int interval;
 	unsigned int signal;
 } Block;
+
 #ifndef __OpenBSD__
 void dummysighandler(int num);
 #endif
