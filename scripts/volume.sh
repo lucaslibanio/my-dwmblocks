@@ -8,8 +8,10 @@ case $BLOCK_BUTTON in
 	5) controle.sh vol_down ;;
 esac
 
-if pactl get-sink-mute @DEFAULT_SINK@ 2>/dev/null | grep -q yes; then
-	echo "mudo"
-else
-	pactl get-sink-volume @DEFAULT_SINK@ 2>/dev/null | grep -o '[0-9]*%' | head -1
-fi
+# logo depois do login o PipeWire pode ainda não estar pronto: mostra "--"
+# e o bloco tenta de novo no próximo intervalo (5 s, em blocks.h)
+mute=$(pactl get-sink-mute @DEFAULT_SINK@ 2>/dev/null) || { echo "--"; exit 0; }
+case "$mute" in
+	*yes*) echo "mudo" ;;
+	*)     pactl get-sink-volume @DEFAULT_SINK@ 2>/dev/null | grep -o '[0-9]*%' | head -1 ;;
+esac
