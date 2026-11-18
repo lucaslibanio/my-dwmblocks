@@ -219,6 +219,13 @@ void buttonhandler(int sig, siginfo_t *si, void *ucontext)
 	if (fork() == 0) {
 		char b[4];
 		pid_t pid;
+		/* Este processo também se chama "dwmblocks": sem isto, um
+		 * "pkill -RTMIN+n dwmblocks" feito pelo próprio script do bloco
+		 * chegaria aqui, rodaria o bloco de novo (ainda com BLOCK_BUTTON)
+		 * e entraria em ciclo infinito. */
+		for (int s = SIGRTMIN; s <= SIGRTMAX; s++)
+			signal(s, SIG_IGN);
+		signal(SIGUSR1, SIG_IGN);
 		snprintf(b, sizeof(b), "%d", button);
 		setsid();
 		signal(SIGCHLD, SIG_DFL);
