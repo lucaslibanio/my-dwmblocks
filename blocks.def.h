@@ -5,6 +5,7 @@
 #define S "~/.source/dwmblocks/scripts/"
 static const Block blocks[] = {
 	/*Icon*/	/*Command*/		/*Update Interval*/	/*Update Signal*/
+	{"Kbd:",	S "keyboard.sh",	0,	6},
 	{"Vol:",	S "volume.sh",		5,	1},
 	{"Bri:",	S "brightness.sh",	0,	2},
 	{"Bat:",	S "battery_status.sh",	30,	3},
